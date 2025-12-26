@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>커텀리듬</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Black+Han+Sans&display=swap" rel="stylesheet">
+    <!-- 유튜브 API는 동적으로 로드, 사운드클라우드 API 추가 -->
+    <script src="https://w.soundcloud.com/player/api.js"></script>
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        h1 { 
+            margin: 10px 0; 
+            font-family: 'Black Han Sans', sans-serif; 
+            font-size: 32px; 
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px #00d2ff;
+            background: linear-gradient(to right, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        #container {
+            display: flex;
+            gap: 20px;
+            width: 95%;
+            height: 85%;
+        }
+
+        #controls {
+            flex: 1;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 1px solid #444;
+        }
+
+        #game-area {
+            flex: 2;
+            position: relative;
+            background: #000;
+            border: 4px solid #333;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.2);
+        }
+
+        .shake { animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+            40%, 60% { transform: translate3d(6px, 0, 0); }
+        }
+
+        /* 플레이어 컨테이너 (유튜브/사클 공통) */
+        #media-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 180px;
+            z-index: 10;
+            opacity: 0.6;
+            pointer-events: none; /* 클릭 방지 */
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #555;
+            background: #000;
+        }
+        
+        /* iframe 숨기기/보이기용 클래스 */
+        .hidden { display: none !important; }
+
+        canvas {
+            background: radial-gradient(circle, #222 0%, #000 100%);
+            z-index: 5;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            background: #111;
+            color: #0f0;
+            border: 1px solid #555;
+            border-radius: 5px;
+            resize: none;
+            font-family: monospace;
+            padding: 10px;
+            box-sizing: border-box;
+            font-size: 12px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #555;
+            border-radius: 5px;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 12px;
+            cursor: pointer;
+            background: #444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 16px;
+            transition: 0.2s;
+            text-transform: uppercase;
+        }
+        button:hover { transform: scale(1.05); }
+        button.primary { background: linear-gradient(45deg, #2196F3, #21CBF3); box-shadow: 0 4px 15px rgba(33, 203, 243, 0.4); }
+        button.danger { background: linear-gradient(45deg, #F44336, #FF9800); box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4); }
+
+        .mode-title { font-size: 18px; font-weight: bold; margin-bottom: 5px; color: #ddd; }
+        #score-board { 
+            font-family: 'Bangers', cursive;
+            font-size: 40px; 
+            text-align: center; 
+            margin-top: auto; 
+            color: #fff;
+            text-shadow: 2px 2px 0 #000, 0 0 20px gold;
+        }
+        
+        .hint { font-size: 13px; color: #888; margin-top: 5px; }
+        .key-hint { display: flex; justify-content: space-around; margin-top: 15px; margin-bottom: 10px; }
+        .key-box { 
+            padding: 10px 20px; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            font-family: 'Bangers', cursive;
+            font-size: 20px;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .key-box span { font-size: 12px; font-family: sans-serif; font-weight: normal; opacity: 0.8; }
+        .left-key { background: #ff4d4d; color: white; border: 2px solid #ff9999; }
+        .right-key { background: #4d4dff; color: white; border: 2px solid #9999ff; }
+
+    </style>
+</head>
+<body>
+
+    <h1>🎵 커텀리듬 (Custom Rhythm)</h1>
+
+    <div id="container">
+        <div id="controls">
+            <!-- 1. 만들기 모드 -->
+            <div>
+                <div class="mode-title">🛠️ 1. 만들기 (Maker)</div>
+                <input type="text" id="music-url" placeholder="유튜브 또는 사운드클라우드 링크">
+                <div class="hint">꾹 누르면 '롱노트'가 됩니다! (A / L 키 권장)</div>
+                <div style="margin-top:10px; display:flex; gap:10px;">
+                    <button onclick="startEditor()" style="flex:1;">🎬 제작 시작</button>
+                    <button class="danger" onclick="stopEditor()" style="flex:1;">💾 제작 완료</button>
+                </div>
+            </div>
+
+            <hr style="width:100%; border-color:#444; opacity: 0.3;">
+
+            <!-- 2. 플레이 모드 -->
+            <div>
+                <div class="mode-title">🎮 2. 플레이 (Player)</div>
+                <textarea id="game-data" placeholder="생성된 압축 코드가 여기 나옵니다."></textarea>
+                <div class="hint">롱노트는 끝까지 꾹 누르고 있어야 합니다!</div>
+                <button class="primary" style="width:100%; margin-top:10px;" onclick="startGame()">🚀 게임 시작 (GO!)</button>
+            </div>
+
+            <div id="score-board">SCORE: 0</div>
+            
+            <div class="key-hint">
+                <div class="key-box left-key">A / Click<span>LEFT</span></div>
+                <div class="key-box right-key">L / Click<span>RIGHT</span></div>
+            </div>
+        </div>
+
+        <div id="game-area">
+            <div id="media-container">
+                <!-- 유튜브 플레이어 -->
+                <div id="yt-player"></div>
+                <!-- 사운드클라우드 플레이어 -->
+                <iframe id="sc-player" class="hidden" width="100%" height="100%" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/293&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true"></iframe>
+            </div>
+            <canvas id="gameCanvas" width="450" height="700"></canvas>
+        </div>
+    </div>
+
+    <!-- 유튜브 API 로드 -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // --- 전역 변수 ---
+        let ytPlayerObj; 
+        let scWidget;
+        let activeProvider = null; // 'youtube' or 'soundcloud'
+        let scStartTime = 0; // 사클 싱크 맞추기 위한 변수
+        
+        let currentMode = 'idle'; 
+        let notes = []; 
+        let score = 0;
+        let combo = 0;
+        
+        // 이펙트 시스템
+        let particles = [];
+        let floatTexts = [];
+        let hitEffects = []; 
+        
+        // 설정
+        const NOTE_SPEED = 1.8; 
+        const HIT_LINE_Y = 600; 
+        const SPAWN_Y = -100;    
+        const HIT_WINDOW = 0.15; 
+        
+        let keyState = { L: false, R: false }; 
+        let editorNoteStart = { L: null, R: null }; 
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameArea = document.getElementById('game-area');
+
+        // --- 플레이어 초기화 ---
+        function onYouTubeIframeAPIReady() {
+            ytPlayerObj = new YT.Player('yt-player', {
+                height: '100%', width: '100%',
+                videoId: '', 
+                playerVars: { 'controls': 0, 'disablekb': 1, 'fs': 0, 'rel': 0 },
+            });
+        }
+        
+        // 사운드클라우드 위젯 준비
+        window.addEventListener('load', () => {
+            const iframe = document.getElementById('sc-player');
+            scWidget = SC.Widget(iframe);
+            // 사클은 getPosition이 비동기라 약간의 트릭 사용 (재생 시작 시간 기록)
+            scWidget.bind(SC.Widget.Events.PLAY, () => {
+                scStartTime = Date.now();
+            });
+            scWidget.bind(SC.Widget.Events.SEEK, () => {
+                scWidget.getPosition((p) => { scStartTime = Date.now() - p; });
+            });
+        });
+
+        // --- 통합 미디어 컨트롤러 ---
+        const Media = {
+            load: (url) => {
+                const ytId = getYoutubeId(url);
+                const ytDiv = document.getElementById('yt-player');
+                const scFrame = document.getElementById('sc-player');
+
+                if (ytId) {
+                    activeProvider = 'youtube';
+                    ytDiv.style.display = 'block';
+                    scFrame.classList.add('hidden');
+                    ytPlayerObj.loadVideoById(ytId);
+                    return true;
+                } else if (url.includes('soundcloud.com')) {
+                    activeProvider = 'soundcloud';
+                    ytDiv.style.display = 'none';
+                    scFrame.classList.remove('hidden');
+                    scWidget.load(url, { auto_play: true, visual: true });
+                    return true;
+                }
+                return false;
+            },
+            play: () => {
+                if(activeProvider === 'youtube') ytPlayerObj.playVideo();
+                if(activeProvider === 'soundcloud') scWidget.play();
+            },
+            pause: () => {
+                if(activeProvider === 'youtube') ytPlayerObj.pauseVideo();
+                if(activeProvider === 'soundcloud') scWidget.pause();
+            },
+            getTime: () => {
+                if(activeProvider === 'youtube') {
+                    return ytPlayerObj && ytPlayerObj.getCurrentTime ? ytPlayerObj.getCurrentTime() : 0;
+                }
+                if(activeProvider === 'soundcloud') {
+                    // 사클 API의 getPosition은 비동기라 게임루프에 부적합.
+                    // 따라서 로컬 시간과 동기화하여 추정치를 반환
+                    return (Date.now() - scStartTime) / 1000;
+                }
+                return 0;
+            },
+            getState: () => {
+                // 단순화를 위해 1(재생중)만 체크
+                if(activeProvider === 'youtube') return ytPlayerObj.getPlayerState();
+                return 1; // SC는 일단 재생중으로 가정 (제작 모드 편의)
+            }
+        };
+
+        function getYoutubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        // --- 입력 핸들러 ---
+        function onInputDown(type) {
+            if (keyState[type]) return;
+            keyState[type] = true;
+
+            const now = Media.getTime();
+
+            if (currentMode === 'editor' && Media.getState() === 1) {
+                editorNoteStart[type] = now;
+                triggerLaneEffect(type);
+            }
+
+            if (currentMode === 'playing') {
+                checkHitDown(type);
+                triggerLaneEffect(type);
+            }
+        }
+
+        function onInputUp(type) {
+            if (!keyState[type]) return;
+            keyState[type] = false;
+
+            if (currentMode === 'editor' && editorNoteStart[type] !== null) {
+                const endTime = Media.getTime();
+                const startTime = editorNoteStart[type];
+                let duration = endTime - startTime;
+                
+                if (duration < 0.15) duration = 0; // 짧으면 단타
+
+                notes.push({ time: startTime, type: type, duration: duration });
+                
+                const text = duration > 0 ? "LONG NOTE!" : "NOTE";
+                const xPos = type === 'L' ? canvas.width/4 : canvas.width*0.75;
+                spawnFloatText(text, xPos, HIT_LINE_Y, '#fff', 20);
+                
+                editorNoteStart[type] = null;
+            }
+        }
+
+        // 이벤트 리스너 연결
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            const type = (e.button === 0) ? 'L' : (e.button === 2) ? 'R' : null;
+            if (type) onInputDown(type);
+        });
+        window.addEventListener('mouseup', (e) => {
+            const type = (e.button === 0) ? 'L' : (e.button === 2) ? 'R' : null;
+            if (type) onInputUp(type);
+        });
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            if (e.repeat) return;
+            if (e.key === 'a' || e.key === 'A') onInputDown('L');
+            if (e.key === 'l' || e.key === 'L') onInputDown('R');
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            if (e.key === 'a' || e.key === 'A') onInputUp('L');
+            if (e.key === 'l' || e.key === 'L') onInputUp('R');
+        });
+
+
+        // --- 메인 로직 ---
+        function startEditor() {
+            const url = document.getElementById('music-url').value;
+            if (!url) return alert("링크를 입력해주세요.");
+
+            const success = Media.load(url);
+            if (!success) return alert("유튜브 또는 사운드클라우드 링크가 아닙니다.");
+
+            notes = [];
+            currentMode = 'editor';
+            // 약간의 딜레이 후 재생 (로딩 시간 고려)
+            setTimeout(() => {
+                Media.play();
+                document.getElementById('game-data').value = "제작 중... [A] / [L]을 꾹 눌러 롱노트를 만드세요!";
+                requestAnimationFrame(gameLoop);
+            }, 1000);
+        }
+
+        // *** 수정: JSON 압축 로직 추가 ***
+        function stopEditor() {
+            if (currentMode !== 'editor') return;
+            Media.pause();
+            currentMode = 'idle';
+
+            const url = document.getElementById('music-url').value;
+            
+            // 데이터 압축 (Minify)
+            // 형식: [time, type(0=L,1=R), duration] 
+            // 소수점 3자리까지만 저장하여 용량 절약
+            const compressedNotes = notes.sort((a, b) => a.time - b.time).map(n => {
+                const t = parseFloat(n.time.toFixed(3));
+                const k = n.type === 'L' ? 0 : 1;
+                const d = parseFloat(n.duration.toFixed(3));
+                // duration이 0이면 [t, k]만, 있으면 [t, k, d]
+                return d > 0 ? [t, k, d] : [t, k];
+            });
+
+            const saveData = {
+                v: 2, // 버전 정보
+                url: url, // 비디오ID 대신 전체 URL 저장 (SC 호환 위해)
+                d: compressedNotes // data
+            };
+            
+            // JSON 문자열 생성 (공백 제거)
+            document.getElementById('game-data').value = JSON.stringify(saveData);
+            alert("완료! 압축된 코드를 복사하세요.");
+        }
+
+        // *** 수정: 압축 해제 및 시작 ***
+        function startGame() {
+            const rawData = document.getElementById('game-data').value;
+            if (!rawData) return alert("데이터가 없습니다.");
+
+            try {
+                const gameData = JSON.parse(rawData);
+                
+                // v2 (압축 버전) 데이터 처리
+                if (gameData.v === 2) {
+                    notes = gameData.d.map(n => ({
+                        time: n[0],
+                        type: n[1] === 0 ? 'L' : 'R',
+                        duration: n[2] || 0,
+                        hit: false, headHit: false
+                    }));
+                    Media.load(gameData.url);
+                } 
+                // 구버전 호환 (혹시 모를 경우)
+                else if (gameData.notes) {
+                     notes = gameData.notes.map(n => ({ 
+                        ...n, hit: false, headHit: false, duration: n.duration || 0 
+                    }));
+                    if(gameData.videoId) Media.load('https://youtu.be/' + gameData.videoId);
+                }
+
+                score = 0; combo = 0;
+                particles = []; floatTexts = [];
+                updateScore();
+                currentMode = 'playing';
+
+                setTimeout(() => {
+                    Media.play();
+                    requestAnimationFrame(gameLoop);
+                }, 1000);
+
+            } catch (e) {
+                alert("코드 오류: " + e.message);
+                console.error(e);
+            }
+        }
+
+        // --- 판정 로직 ---
+        function checkHitDown(inputType) {
+            const currentTime = Media.getTime();
+            
+            const targetNote = notes.find(n => 
+                !n.hit && !n.headHit &&
+                n.type === inputType && 
+                Math.abs(n.time - currentTime) <= HIT_WINDOW
+            );
+
+            const xPos = inputType === 'L' ? canvas.width/4 : (canvas.width * 3)/4;
+
+            if (targetNote) {
+                const diff = Math.abs(targetNote.time - currentTime);
+                let hitText = "NICE";
+                let hitColor = "#ffff00";
+                
+                if (diff < 0.05) { score += 500; hitText = "PERFECT!!"; hitColor = "#00ffff"; shakeScreen(); }
+                else if (diff < 0.1) { score += 300; hitText = "GREAT!"; hitColor = "#adff2f"; }
+                else { score += 100; }
+
+                spawnFloatText(hitText, xPos, HIT_LINE_Y - 50, hitColor, 35);
+                spawnExplosion(xPos, HIT_LINE_Y, inputType === 'L' ? '#ff4d4d' : '#4d4dff');
+
+                if (targetNote.duration > 0) {
+                    targetNote.headHit = true;
+                } else {
+                    targetNote.hit = true;
+                    combo++;
+                    updateScore();
+                }
+            }
+        }
+
+        function updateScore() {
+            const scoreEl = document.getElementById('score-board');
+            scoreEl.innerHTML = `SCORE: ${score}<br><span style="font-size:20px; color:#aaa">COMBO: ${combo}</span>`;
+            if(combo > 0 && combo % 10 === 0) {
+                scoreEl.style.transform = "scale(1.3)";
+                setTimeout(() => scoreEl.style.transform = "scale(1)", 150);
+            }
+        }
+
+        // --- 그래픽 & 이펙트 ---
+        function spawnExplosion(x, y, color, count = 15) {
+            for(let i=0; i<count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 15,
+                    vy: (Math.random() - 1.5) * 15,
+                    life: 1.0, color: color, size: Math.random() * 8 + 2
+                });
+            }
+        }
+
+        function spawnFloatText(text, x, y, color, size = 30) {
+            floatTexts.push({ text: text, x: x, y: y, life: 1.0, color: color, size: size, dy: -2 });
+        }
+
+        function triggerLaneEffect(type) {
+            hitEffects.push({ type: type, life: 1.0 });
+        }
+
+        function shakeScreen() {
+            gameArea.classList.remove('shake');
+            void gameArea.offsetWidth;
+            gameArea.classList.add('shake');
+        }
+
+        // --- 게임 루프 ---
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawLanes();
+
+            // 레인 이펙트
+            hitEffects.forEach((effect, index) => {
+                const x = effect.type === 'L' ? 0 : canvas.width / 2;
+                ctx.globalAlpha = effect.life * 0.3;
+                ctx.fillStyle = effect.type === 'L' ? '#ff0000' : '#0000ff';
+                ctx.fillRect(x, 0, canvas.width / 2, canvas.height);
+                effect.life -= 0.1;
+                if(effect.life <= 0) hitEffects.splice(index, 1);
+            });
+            ctx.globalAlpha = 1.0;
+
+            // 판정선
+            ctx.shadowBlur = 10; ctx.shadowColor = "white"; ctx.fillStyle = 'white';
+            ctx.fillRect(0, HIT_LINE_Y - 2, canvas.width, 4);
+            ctx.shadowBlur = 0;
+
+            if (currentMode !== 'idle') {
+                const currentTime = Media.getTime();
+
+                notes.forEach(note => {
+                    if (note.hit) return; 
+
+                    const timeDiff = note.time - currentTime;
+                    const noteEndDiff = (note.time + note.duration) - currentTime;
+                    const isVisible = (timeDiff < NOTE_SPEED + 1) && (noteEndDiff > -0.5);
+
+                    if (isVisible) {
+                        const progress = 1 - (timeDiff / NOTE_SPEED);
+                        const yHead = SPAWN_Y + (HIT_LINE_Y - SPAWN_Y) * progress;
+                        const pixelPerSec = (HIT_LINE_Y - SPAWN_Y) / NOTE_SPEED;
+                        const tailHeight = note.duration * pixelPerSec;
+
+                        if (note.duration > 0 && currentMode === 'playing') {
+                            const xPos = note.type === 'L' ? canvas.width/4 : canvas.width*0.75;
+
+                            if (note.headHit && !note.hit) {
+                                if (keyState[note.type]) {
+                                    score += 5; 
+                                    updateScore();
+                                    spawnExplosion(xPos, HIT_LINE_Y, '#fff', 1); 
+                                    ctx.fillStyle = `rgba(255, 255, 255, 0.5)`;
+                                    ctx.fillRect(xPos - 50, HIT_LINE_Y - 50, 100, 50); 
+                                    
+                                    if (noteEndDiff <= 0) {
+                                        note.hit = true; 
+                                        combo++;
+                                        spawnFloatText("COMPLETE!", xPos, HIT_LINE_Y - 80, '#fff', 30);
+                                    }
+                                } else {
+                                    note.hit = true; 
+                                    combo = 0;
+                                    updateScore();
+                                    spawnFloatText("MISS...", xPos, HIT_LINE_Y, '#888', 30);
+                                }
+                                
+                                const yTailEnd = yHead - tailHeight;
+                                if (yTailEnd < HIT_LINE_Y) {
+                                    drawLongNoteBody(note.type, Math.max(yTailEnd, SPAWN_Y), Math.min(yHead, HIT_LINE_Y));
+                                }
+                                return; 
+                            }
+                        }
+
+                        drawNote(note.type, yHead, note.duration, tailHeight);
+
+                        if (currentMode === 'playing' && !note.headHit && timeDiff < -HIT_WINDOW) {
+                            note.hit = true;
+                            combo = 0;
+                            updateScore();
+                            const xPos = note.type === 'L' ? canvas.width/4 : canvas.width*0.75;
+                            spawnFloatText("MISS", xPos, HIT_LINE_Y, '#888', 30);
+                        }
+                    }
+                });
+            }
+
+            updateAndDrawParticles();
+            updateAndDrawTexts();
+
+            if(combo > 0 && currentMode === 'playing') {
+                ctx.fillStyle = `rgba(255, 255, 255, 0.05)`;
+                ctx.font = "italic bold 150px 'Bangers'";
+                ctx.textAlign = "center";
+                ctx.fillText(combo, canvas.width/2, canvas.height/2);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 그리기 헬퍼 ---
+        function drawLanes() {
+            ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0); ctx.lineTo(canvas.width / 2, canvas.height); ctx.stroke();
+            ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.beginPath();
+            ctx.moveTo(canvas.width / 4, 0); ctx.lineTo(canvas.width / 4, canvas.height);
+            ctx.moveTo(canvas.width * 3/4, 0); ctx.lineTo(canvas.width * 3/4, canvas.height); ctx.stroke();
+        }
+
+        function drawNote(type, y, duration, tailHeight) {
+            const width = 120;
+            const height = 25;
+            let x, color;
+            if (type === 'L') { x = (canvas.width/4)-(width/2); color = '#ff4d4d'; }
+            else { x = (3*canvas.width/4)-(width/2); color = '#4d4dff'; }
+
+            if (duration > 0) {
+                const tailY = y - tailHeight;
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.5;
+                ctx.fillRect(x + 10, tailY + height/2, width - 20, tailHeight);
+                ctx.globalAlpha = 1.0;
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x + 10, tailY + height/2, width - 20, tailHeight);
+            }
+
+            ctx.shadowBlur = 15; ctx.shadowColor = color; ctx.fillStyle = color;
+            ctx.beginPath(); ctx.roundRect(x, y, width, height, 5); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.fillRect(x + 5, y + 2, width - 10, height/2 - 2);
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawLongNoteBody(type, yTop, yBottom) {
+             const width = 100;
+             let x, color;
+             if (type === 'L') { x = (canvas.width/4)-(width/2); color = '#ff4d4d'; }
+             else { x = (3*canvas.width/4)-(width/2); color = '#4d4dff'; }
+             
+             const h = yBottom - yTop;
+             if(h <= 0) return;
+
+             ctx.fillStyle = color;
+             ctx.globalAlpha = 0.5;
+             ctx.fillRect(x, yTop, width, h);
+             ctx.globalAlpha = 1.0;
+        }
+
+        function updateAndDrawParticles() {
+            particles.forEach((p, i) => {
+                p.x += p.vx; p.y += p.vy; p.vy += 0.5; p.life -= 0.03;
+                if(p.life <= 0) particles.splice(i, 1);
+                else {
+                    ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        function updateAndDrawTexts() {
+            floatTexts.forEach((t, i) => {
+                t.y += t.dy; t.life -= 0.02;
+                if(t.life <= 0) floatTexts.splice(i, 1);
+                else {
+                    ctx.save(); ctx.translate(t.x, t.y);
+                    const scale = t.life > 0.8 ? 1.5 : 1.0; ctx.scale(scale, scale);
+                    ctx.globalAlpha = t.life; ctx.fillStyle = t.color; ctx.strokeStyle = 'black';
+                    ctx.lineWidth = 3; ctx.font = `italic ${t.size}px 'Black Han Sans'`; ctx.textAlign = "center";
+                    ctx.strokeText(t.text, 0, 0); ctx.fillText(t.text, 0, 0); ctx.restore();
+                }
+            });
+            ctx.globalAlpha = 1.0;
+        }
+    </script>
+</body>
+</html>
