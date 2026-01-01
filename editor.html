@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>커텀리듬 편집기</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Black+Han+Sans&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- SoundCloud API -->
+    <script src="https://w.soundcloud.com/player/api.js"></script>
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        h1 { 
+            margin: 5px 0; 
+            font-family: 'Black Han Sans', sans-serif; 
+            font-size: 28px; 
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px #ff00de;
+            background: linear-gradient(to right, #ff00de, #a800ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #editor-container {
+            display: flex;
+            width: 98%;
+            height: 90%;
+            gap: 10px;
+        }
+
+        .panel {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+
+        #settings-panel { flex: 1; max-width: 300px; }
+        #canvas-area {
+            flex: 2;
+            position: relative;
+            background: #000;
+            border: 2px solid #555;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        #timeline-panel { flex: 1; max-width: 300px; }
+
+        .input-group { margin-bottom: 8px; }
+        label { display: block; font-size: 12px; color: #888; margin-bottom: 3px; font-weight: bold; }
+        input[type="text"], input[type="number"], select {
+            width: 100%; background: #2a2a2a; border: 1px solid #444; color: white;
+            padding: 8px; border-radius: 4px; box-sizing: border-box; font-family: 'Roboto Mono', monospace;
+        }
+        
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: #00d2ff; }
+
+        button {
+            width: 100%; padding: 10px; background: #333; color: #eee; border: none;
+            border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-bottom: 5px;
+        }
+        button:hover { background: #444; }
+        button.active { background: #00d2ff; color: #000; box-shadow: 0 0 10px #00d2ff; }
+        button.record { background: #ff4d4d; color: white; }
+        button.record.recording { background: #ff0000; animation: pulse 1s infinite; box-shadow: 0 0 15px red; }
+        
+        .btn-group { display: flex; gap: 5px; }
+        button.file-btn { background: #555; font-size: 12px; padding: 8px; }
+        button.save { background: linear-gradient(45deg, #00d2ff, #3a7bd5); margin-top: auto; }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
+        /* 미디어 컨테이너 숨김 */
+        #media-hidden { 
+            position: absolute; 
+            left: -9999px; 
+            top: 0;
+            width: 300px; 
+            height: 300px; 
+            opacity: 0; 
+            pointer-events: none; 
+            overflow: hidden;
+        }
+
+        canvas { background: radial-gradient(circle, #222 0%, #000 100%); cursor: crosshair; }
+        .info-text { font-size: 11px; color: #666; margin-top: 2px; }
+        hr { border: 0; border-top: 1px solid #333; width: 100%; margin: 10px 0; }
+        
+        /* [수정] 재생 컨트롤 영역 */
+        #playback-controls {
+            display: none; /* 초기에는 숨김 */
+        }
+
+        #time-display {
+            font-family: 'Roboto Mono', monospace; font-size: 24px; text-align: center;
+            color: #00d2ff; text-shadow: 0 0 5px rgba(0, 210, 255, 0.5); margin: 10px 0;
+        }
+        
+        .key-guide {
+            display: flex; justify-content: space-around; background: #222; padding: 5px; border-radius: 5px; margin-top: 5px;
+        }
+        .key-item { font-size: 11px; color: #aaa; text-align: center; }
+        .key-item b { display: block; font-size: 13px; color: #fff; }
+        
+        #yt-status { font-size: 10px; color: #ff0000; margin-top: 2px; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>🎛️ 커텀리듬 편집기 (6.0)</h1>
+
+    <div id="editor-container">
+        <!-- 왼쪽: 설정 -->
+        <div id="settings-panel" class="panel">
+            <h3 style="margin:0; color:#ddd;">📁 맵 & 파일</h3>
+            
+            <div class="input-group">
+                <label>파일 관리</label>
+                <div class="btn-group">
+                    <button class="file-btn" onclick="document.getElementById('file-input').click()">📂 파일 열기 (.crn)</button>
+                    <!-- [수정됨] 이름 지정 저장을 위해 onclick 함수 유지 -->
+                    <button class="file-btn" onclick="downloadMapFile()">💾 저장 (.crn)</button>
+                </div>
+                <input type="file" id="file-input" accept=".crn,.json" style="display: none;" onchange="loadMapFile(this)">
+            </div>
+            <hr>
+
+            <div class="input-group">
+                <label>음원 링크 (YouTube/SoundCloud)<br>사운드클라우드를 강력 추천합니다.</label>
+                <input type="text" id="music-url" placeholder="URL 입력 (예: https://youtu.be/...)">
+                <button onclick="loadMedia()" style="margin-top:5px;">🎵 음원 로드</button>
+                <div id="yt-status">YouTube API 준비 중...</div>
+            </div>
+            <hr>
+            <div class="input-group">
+                <label>키 모드 (Key Mode)</label>
+                <select id="key-mode" onchange="changeKeyMode()">
+                    <option value="2">2 Key (Basic)</option>
+                    <option value="4">4 Key (Advanced)</option>
+                    <option value="6">6 Key (Expert)</option>
+                </select>
+            </div>
+            <div class="key-guide" id="key-guide-display"></div>
+            <hr>
+            <div class="input-group">
+                <label>채보 방향 (Scroll)</label>
+                <select id="scroll-direction" onchange="updateScrollDir()">
+                    <option value="down" selected>Down (위→아래)</option>
+                    <option value="up">Up (아래→위)</option>
+                </select>
+            </div>
+            <!-- [추가됨] 채보 속도 조절 슬라이더 -->
+            <div class="input-group">
+                <label>노트 속도 (Speed): <span id="speed-display" style="color:#00d2ff">1.0</span>x</label>
+                <input type="range" id="note-speed" min="0.5" max="3.0" step="0.1" value="1.0" oninput="updateSpeed()">
+            </div>
+            <div class="input-group">
+                <label>BPM</label>
+                <input type="number" id="bpm" value="120" onchange="updateGrid()">
+            </div>
+            <div class="input-group">
+                <label>오프셋 (Offset)</label>
+                <input type="number" id="offset" value="0.0" step="0.01" onchange="updateGrid()">
+            </div>
+            <div class="input-group">
+                <label>스냅 (Snap)</label>
+                <select id="snap-divisor">
+                    <option value="1">1/1</option>
+                    <option value="2">1/2</option>
+                    <option value="4" selected>1/4 (권장)</option>
+                    <option value="8">1/8</option>
+                    <option value="0">해제 (Free)</option>
+                </select>
+            </div>
+            
+            <button class="save" onclick="exportToClipboard()">📋 코드 복사 (클립보드)</button>
+            <textarea id="export-area" style="height: 40px; resize: none; background:#111; color:#0f0; border:1px solid #444;" readonly placeholder="코드 복사 결과"></textarea>
+        </div>
+
+        <!-- 중앙: 캔버스 -->
+        <div id="canvas-area">
+            <canvas id="editorCanvas" width="450" height="700"></canvas>
+            
+            <div id="media-hidden">
+                <div id="yt-player"></div>
+                <iframe id="sc-player" width="100%" height="166" scrolling="no" frameborder="no" allow="autoplay; encrypted-media" 
+                    src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/293&color=%23ff5500&auto_play=false&hide_related=true&show_comments=false&show_user=false&show_reposts=false&show_teaser=false&visual=false">
+                </iframe>
+            </div>
+        </div>
+
+        <!-- 오른쪽: 도구 -->
+        <div id="timeline-panel" class="panel">
+            <h3 style="margin:0; color:#ddd;">🛠️ 편집 & 녹화</h3>
+            
+            <!-- [수정] 재생바와 컨트롤을 묶어서 초기에는 숨김 -->
+            <div id="playback-controls">
+                <div id="time-display">00:00.000</div>
+                <div class="input-group">
+                    <input type="range" id="seek-bar" min="0" max="100" step="0.1" value="0" 
+                           onmousedown="startDraggingSlider()" 
+                           onmouseup="finishDraggingSlider()" 
+                           oninput="seeking()">
+                </div>
+                <button id="play-btn" onclick="togglePlay()">▶ 재생 (Space)</button>
+            </div>
+            
+            <!-- 음원이 로드되지 않았을 때 보이는 안내 문구 (선택사항) -->
+            <div id="no-media-msg" style="text-align:center; color:#666; font-size:12px; margin: 20px 0;">
+                왼쪽에서 음원을 먼저 로드해주세요.
+            </div>
+
+            <hr>
+            <label>🔴 실시간 녹화 (Live Record)</label>
+            <button id="record-btn" class="record" onclick="toggleRecord()">⏺ 녹화 모드 켜기</button>
+            <div class="info-text">
+                <b>[2키]</b> D/K or 마우스 클릭<br>
+                <b>[4키]</b> D/F / J/K<br>
+                <b>[6키]</b> S/D/F / J/K/L
+            </div>
+            <hr>
+            <label>마우스 도구</label>
+            <div style="display:flex; gap:5px;">
+                <button id="tool-tap" class="active" onclick="setTool('tap')">단타</button>
+                <button id="tool-long" onclick="setTool('long')">롱노트</button>
+                <button id="tool-del" onclick="setTool('delete')">지우개</button>
+            </div>
+            <div class="info-text" style="margin-top:10px;">
+                * <b>롱노트:</b> 꾹 누르고 드래그하여 길이 조절<br>
+                * <b>휠:</b> 타임라인 이동 (Shift: 정밀)<br>
+                * <b>우클릭:</b> 노트 삭제
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 전역 설정 ---
+        let mapData = { v: 3, keyMode: 2, bpm: 120, offset: 0, notes: [] };
+        
+        let isPlaying = false;
+        let isRecording = false; 
+        let isDraggingSlider = false;
+        let scrollDir = 'down';
+
+        let currentTime = 0;
+        let duration = 1; 
+        let currentTool = 'tap'; 
+        
+        let HIT_LINE_Y = 550;
+                const BASE_PIXELS_PER_SECOND = 400; // 기본 속도 상수
+                let pixelsPerSecond = 400;          // 현재 적용된 속도 변수
+        const PIXELS_PER_SECOND = 400; 
+
+        // 미디어 관련 변수
+        let ytPlayer = null;
+        let isYTReady = false;
+        let scWidget = null;
+        let activeProvider = null; // 'youtube' or 'soundcloud'
+        let scStartTime = 0; 
+        let scPlayOffset = 0;
+
+        let heldCols = {}; 
+        let dragNote = null;
+
+        const canvas = document.getElementById('editorCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 키 매핑
+        const KEY_MAPPING = {
+            2: { 'KeyD': 0, 'KeyF': 0, 'KeyJ': 1, 'KeyK': 1 }, 
+            4: { 'KeyD': 0, 'KeyF': 1, 'KeyJ': 2, 'KeyK': 3 },
+            6: { 'KeyS': 0, 'KeyD': 1, 'KeyF': 2, 'KeyJ': 3, 'KeyK': 4, 'KeyL': 5 }
+        };
+
+        // --- YouTube API 초기화 ---
+        function loadYoutubeAPI() {
+            var tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            var firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        }
+
+        window.onYouTubeIframeAPIReady = function() {
+            ytPlayer = new YT.Player('yt-player', {
+                height: '200',
+                width: '200',
+                playerVars: { 
+                    'controls': 0, 
+                    'disablekb': 1,
+                    'playsinline': 1,
+                    'origin': window.location.origin 
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange,
+                    'onError': onPlayerError
+                }
+            });
+        };
+
+        function onPlayerReady(event) {
+            isYTReady = true;
+            document.getElementById('yt-status').style.display = 'none';
+            console.log("YouTube Player Ready");
+        }
+
+        function onPlayerError(event) {
+            console.error("YouTube Player Error:", event.data);
+            alert("YouTube 재생 중 오류 발생 (유효하지 않은 영상 ID 등)");
+        }
+
+        // --- 초기화 ---
+        window.onload = () => {
+            loadYoutubeAPI();
+
+            const iframe = document.getElementById('sc-player');
+            scWidget = SC.Widget(iframe);
+            
+            scWidget.bind(SC.Widget.Events.PLAY, () => {
+                scStartTime = Date.now();
+                scWidget.getPosition((p) => scPlayOffset = p / 1000);
+            });
+            scWidget.bind(SC.Widget.Events.SEEK, () => {
+                scWidget.getPosition((p) => {
+                    scPlayOffset = p / 1000;
+                    scStartTime = Date.now();
+                });
+            });
+            scWidget.bind(SC.Widget.Events.PAUSE, () => { isPlaying = false; updatePlayBtn(); });
+            scWidget.bind(SC.Widget.Events.FINISH, () => { isPlaying = false; updatePlayBtn(); });
+            scWidget.bind(SC.Widget.Events.READY, () => {
+                console.log("SoundCloud Widget Ready");
+            });
+
+            updateKeyGuide();
+            updateScrollDir();
+            requestAnimationFrame(drawLoop);
+        };
+
+        // --- 미디어 로직 & UI 제어 ---
+        function enableControls() {
+            document.getElementById('playback-controls').style.display = 'block';
+            document.getElementById('no-media-msg').style.display = 'none';
+        }
+
+function loadMedia() {
+            const url = document.getElementById('music-url').value.trim();
+            if (!url) { alert("URL을 입력해주세요."); return; }
+
+            pauseAll();
+
+            if (url.includes('youtu')) {
+                const id = getYoutubeId(url);
+                if(id) {
+                    if (!isYTReady || !ytPlayer) {
+                        alert("YouTube 플레이어가 아직 초기화되지 않았습니다. 잠시 후 다시 시도해주세요.");
+                        document.getElementById('yt-status').style.display = 'block';
+                        return;
+                    }
+                    activeProvider = 'youtube';
+                    ytPlayer.loadVideoById(id);
+                    ytPlayer.pauseVideo();
+                    
+                    enableControls();
+
+                    setTimeout(() => {
+                        if(ytPlayer && ytPlayer.getDuration) {
+                            duration = ytPlayer.getDuration();
+                            document.getElementById('seek-bar').max = duration;
+                            document.getElementById('seek-bar').value = 0;
+                            currentTime = 0;
+                        }
+                    }, 1500);
+                } else {
+                    alert("올바르지 않은 YouTube URL입니다.");
+                }
+            } else if (url.includes('soundcloud')) {
+                activeProvider = 'soundcloud';
+                
+                // [중요] 기존 이벤트 리스너가 계속 쌓이는 것을 방지하기 위해 초기화
+                scWidget.unbind(SC.Widget.Events.READY);
+
+                scWidget.load(url, { 
+                    auto_play: true, // [핵심 수정] true로 설정하여 오디오 엔진을 강제 활성화
+                    visual: false,
+                    show_artwork: false 
+                });
+                
+                enableControls();
+
+                // 로드가 완료(READY)되면 즉시 멈춰서 사용자에게는 정지된 것처럼 보이게 함
+                scWidget.bind(SC.Widget.Events.READY, () => {
+                    // 소리 확보를 위해 볼륨을 확실히 설정
+                    scWidget.setVolume(100);
+                    
+                    // auto_play: true로 인해 시작된 재생을 즉시 멈춤
+                    scWidget.pause();
+                    scWidget.seekTo(0);
+                    
+                    isPlaying = false;
+                    updatePlayBtn();
+
+                    scWidget.getDuration(d => {
+                        duration = d / 1000;
+                        document.getElementById('seek-bar').max = duration;
+                        document.getElementById('seek-bar').value = 0;
+                        currentTime = 0;
+                    });
+                });
+            } else {
+                alert("지원되지 않는 URL입니다. (YouTube 또는 SoundCloud만 가능)");
+            }
+        }
+
+        function getYoutubeId(url) {
+            const match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        function pauseAll() {
+            isPlaying = false;
+            updatePlayBtn();
+            if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') ytPlayer.pauseVideo();
+            if (scWidget) scWidget.pause();
+        }
+
+        function togglePlay() {
+            if (activeProvider === null) {
+                alert("먼저 음원을 로드해주세요.");
+                return;
+            }
+
+            if (isPlaying) {
+                pauseAll();
+            } else {
+                if (activeProvider === 'youtube') {
+                    if(ytPlayer && typeof ytPlayer.playVideo === 'function') {
+                        ytPlayer.playVideo();
+                    } else {
+                        return;
+                    }
+                } else if (activeProvider === 'soundcloud') {
+                    scWidget.play();
+                    scStartTime = Date.now();
+                }
+                isPlaying = true;
+                updatePlayBtn();
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data == YT.PlayerState.PLAYING) {
+                isPlaying = true;
+                duration = ytPlayer.getDuration();
+                document.getElementById('seek-bar').max = duration;
+            }
+            else if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
+                isPlaying = false;
+            }
+            updatePlayBtn();
+        }
+
+        function updatePlayBtn() {
+            document.getElementById('play-btn').innerText = isPlaying ? "⏸ 일시정지 (Space)" : "▶ 재생 (Space)";
+        }
+
+        // --- 슬라이더 컨트롤 ---
+        function startDraggingSlider() { 
+            isDraggingSlider = true; 
+        }
+        
+        function seeking() {
+            const val = parseFloat(document.getElementById('seek-bar').value);
+            currentTime = val;
+            updateTimeDisplay();
+        }
+        
+        function finishDraggingSlider() {
+            isDraggingSlider = false;
+            const val = parseFloat(document.getElementById('seek-bar').value);
+            currentTime = val;
+            
+            if (activeProvider === 'youtube' && ytPlayer && isYTReady) {
+                ytPlayer.seekTo(val, true);
+            }
+            if (activeProvider === 'soundcloud') {
+                scWidget.seekTo(val * 1000);
+            }
+        }
+        
+        // [추가됨] 속도 조절 함수
+        function updateSpeed() {
+            const val = parseFloat(document.getElementById('note-speed').value);
+            document.getElementById('speed-display').innerText = val.toFixed(1);
+            pixelsPerSecond = BASE_PIXELS_PER_SECOND * val;
+        }
+        
+        function updateScrollDir() {
+            scrollDir = document.getElementById('scroll-direction').value;
+            HIT_LINE_Y = scrollDir === 'down' ? 550 : 150;
+        }
+
+        // --- 메인 루프 (렌더링) ---
+        function drawLoop() {
+            if (isPlaying && !isDraggingSlider) {
+                if (activeProvider === 'youtube' && isYTReady && ytPlayer && ytPlayer.getCurrentTime) {
+                    try {
+                        const t = ytPlayer.getCurrentTime();
+                        if(typeof t === 'number') currentTime = t;
+                    } catch(e) { /* 무시 */ }
+                } else if (activeProvider === 'soundcloud') {
+                    currentTime = scPlayOffset + (Date.now() - scStartTime) / 1000;
+                    if (currentTime > duration) currentTime = duration;
+                }
+                document.getElementById('seek-bar').value = currentTime;
+            }
+            
+            if (!isDraggingSlider) updateTimeDisplay();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const laneCount = mapData.keyMode;
+            const laneWidth = canvas.width / laneCount;
+            
+            // 레인 구분선
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+            for(let i=1; i<laneCount; i++) {
+                ctx.beginPath(); ctx.moveTo(i * laneWidth, 0); ctx.lineTo(i * laneWidth, canvas.height); ctx.stroke();
+            }
+
+            // 녹화 표시
+            if (isRecording && isPlaying) {
+                ctx.save();
+                ctx.fillStyle = "rgba(255, 0, 0, 0.15)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = "#ff3333";
+                ctx.font = "bold 32px 'Black Han Sans', sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "red";
+                ctx.fillText("● RECORDING", canvas.width / 2, 80);
+                ctx.restore();
+            }
+
+            // 그리드
+            const bpm = mapData.bpm;
+            const offset = mapData.offset;
+            const snapDivisor = parseInt(document.getElementById('snap-divisor').value);
+            
+            let timeTop, timeBottom;
+            if (scrollDir === 'down') {
+                timeTop = currentTime + (HIT_LINE_Y / pixelsPerSecond); // 수정됨
+                timeBottom = currentTime - ((canvas.height - HIT_LINE_Y) / pixelsPerSecond); // 수정됨
+            } else {
+                timeTop = currentTime - (HIT_LINE_Y / pixelsPerSecond); // 수정됨
+                timeBottom = currentTime + ((canvas.height - HIT_LINE_Y) / pixelsPerSecond); // 수정됨
+            }
+
+            if (snapDivisor > 0 && bpm > 0) {
+                const gridInterval = (60 / bpm) / snapDivisor;
+                const minT = Math.min(timeTop, timeBottom);
+                const maxT = Math.max(timeTop, timeBottom);
+                
+                const startGrid = Math.floor(Math.max(0, minT) / gridInterval);
+                const endGrid = Math.ceil(maxT / gridInterval);
+
+                ctx.font = "10px Roboto Mono";
+                ctx.textAlign = "right";
+
+                for(let i = startGrid; i <= endGrid; i++) {
+                    const t = i * gridInterval + offset;
+                    let y;
+                    if (scrollDir === 'down') y = HIT_LINE_Y - (t - currentTime) * pixelsPerSecond; // 수정됨
+                    else y = HIT_LINE_Y + (t - currentTime) * pixelsPerSecond; // 수정됨
+
+                    const isBeat = (i % snapDivisor === 0);
+                    const isMeasure = (i % (snapDivisor * 4) === 0);
+
+                    ctx.strokeStyle = isBeat ? '#666' : '#222';
+                    ctx.lineWidth = isBeat ? 2 : 1;
+                    
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+
+                    if (isMeasure) {
+                         const mm = Math.floor(t / 60);
+                         const ss = Math.floor(t % 60);
+                         const timeText = `${mm}:${String(ss).padStart(2,'0')}`;
+                         ctx.fillStyle = "#aaa";
+                         ctx.fillText(timeText, 35, y - 2);
+                    }
+                }
+            }
+
+            // 판정선
+            ctx.strokeStyle = '#00d2ff'; ctx.lineWidth = 3;
+            ctx.shadowBlur = 10; ctx.shadowColor = '#00d2ff';
+            ctx.beginPath(); ctx.moveTo(0, HIT_LINE_Y); ctx.lineTo(canvas.width, HIT_LINE_Y); ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // 노트
+            mapData.notes.forEach(note => {
+                const minT = Math.min(timeTop, timeBottom);
+                const maxT = Math.max(timeTop, timeBottom);
+                if (note.time > maxT + 2 || note.time + note.duration < minT - 1) return;
+
+                let y;
+                if (scrollDir === 'down') y = HIT_LINE_Y - (note.time - currentTime) * pixelsPerSecond; // 수정됨
+                else y = HIT_LINE_Y + (note.time - currentTime) * pixelsPerSecond; // 수정됨
+                
+                const x = note.col * laneWidth;
+                
+                let color = '#fff';
+                if (mapData.keyMode === 4) color = (note.col === 0 || note.col === 3) ? '#ff4d4d' : '#4d4dff';
+                else if (mapData.keyMode === 6) {
+                    if (note.col === 0 || note.col === 5) color = '#ff4d4d';
+                    else if (note.col === 1 || note.col === 4) color = '#4d4dff';
+                    else color = '#ffd700'; 
+                }
+                else color = (note.col === 0) ? '#ff4d4d' : '#4d4dff';
+
+                if (note.duration > 0) {
+                    const tailHeight = note.duration * pixelsPerSecond; // 수정됨
+                    let tailY;
+                    if (scrollDir === 'down') tailY = y - tailHeight;
+                    else tailY = y; 
+
+                    ctx.fillStyle = color; ctx.globalAlpha = 0.4;
+                    if (scrollDir === 'down') ctx.fillRect(x + 5, tailY + 10, laneWidth - 10, tailHeight);
+                    else ctx.fillRect(x + 5, y + 10, laneWidth - 10, tailHeight);
+                    ctx.globalAlpha = 1.0;
+                }
+                
+                ctx.fillStyle = color; ctx.beginPath();
+                ctx.roundRect(x + 2, y, laneWidth - 4, 20, 4); ctx.fill();
+            });
+
+            // Ghost Note
+            if (dragNote) {
+                let y;
+                if (scrollDir === 'down') y = HIT_LINE_Y - (dragNote.startTime - currentTime) * pixelsPerSecond; // 수정됨
+                else y = HIT_LINE_Y + (dragNote.startTime - currentTime) * pixelsPerSecond; // 수정됨
+
+                const mouseTime = getTimeFromY(lastMouseY);
+                let dur = Math.abs(mouseTime - dragNote.startTime);
+                if(dur < 0) dur = 0;
+                
+                const tailHeight = dur * pixelsPerSecond; // 수정됨
+                const x = dragNote.col * laneWidth;
+
+                ctx.fillStyle = "rgba(0, 255, 0, 0.5)";
+                if (scrollDir === 'down') {
+                     if (mouseTime > dragNote.startTime) ctx.fillRect(x + 5, y - tailHeight, laneWidth - 10, tailHeight);
+                     else ctx.fillRect(x + 5, y, laneWidth - 10, tailHeight);
+                } else {
+                     if (mouseTime > dragNote.startTime) ctx.fillRect(x + 5, y, laneWidth - 10, tailHeight);
+                     else ctx.fillRect(x + 5, y - tailHeight, laneWidth - 10, tailHeight);
+                }
+                ctx.fillRect(x + 2, y, laneWidth - 4, 20); 
+            }
+
+            requestAnimationFrame(drawLoop);
+        }
+
+        // --- 입력 처리 ---
+        let lastMouseY = 0;
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            lastMouseY = e.clientY - rect.top;
+        });
+
+        function getTimeFromY(y) {
+            if (scrollDir === 'down') {
+                return currentTime + (HIT_LINE_Y - y) / pixelsPerSecond; // 수정됨
+            } else {
+                return currentTime + (y - HIT_LINE_Y) / pixelsPerSecond; // 수정됨
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (isPlaying && !isRecording) return; 
+            if (isRecording && isPlaying) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const clickY = e.clientY - rect.top;
+            const clickX = e.clientX - rect.left;
+            
+            let time = getTimeFromY(clickY);
+            const col = Math.floor(clickX / (canvas.width / mapData.keyMode));
+
+            const snapDivisor = parseInt(document.getElementById('snap-divisor').value);
+            if (snapDivisor > 0 && mapData.bpm > 0) {
+                const interval = (60 / mapData.bpm) / snapDivisor;
+                time = Math.round((time - mapData.offset) / interval) * interval + mapData.offset;
+            }
+
+            if (e.button === 2 || currentTool === 'delete') {
+                const idx = mapData.notes.findIndex(n => n.col === col && Math.abs(n.time - time) < 0.05);
+                if(idx !== -1) mapData.notes.splice(idx, 1);
+            } 
+            else if (e.button === 0) {
+                if (currentTool === 'tap') {
+                    addNote(time, col, 0);
+                }
+                else if (currentTool === 'long') {
+                    dragNote = { col: col, startTime: time, startY: clickY };
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (dragNote) {
+                const rect = canvas.getBoundingClientRect();
+                const clickY = e.clientY - rect.top;
+                let endTime = getTimeFromY(clickY);
+
+                const snapDivisor = parseInt(document.getElementById('snap-divisor').value);
+                if (snapDivisor > 0 && mapData.bpm > 0) {
+                    const interval = (60 / mapData.bpm) / snapDivisor;
+                    endTime = Math.round((endTime - mapData.offset) / interval) * interval + mapData.offset;
+                }
+
+                const startTime = Math.min(dragNote.startTime, endTime);
+                const finalEnd = Math.max(dragNote.startTime, endTime);
+                let duration = finalEnd - startTime;
+
+                if (duration < 0.01) duration = 0;
+                addNote(startTime, dragNote.col, duration);
+                dragNote = null;
+            }
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            if(isPlaying) return;
+            e.preventDefault();
+            const delta = (e.deltaY > 0 ? 1 : -1) * (e.shiftKey ? 0.05 : 0.5);
+            let newTime = currentTime + delta;
+            if(newTime < 0) newTime = 0;
+            if(newTime > duration) newTime = duration;
+            currentTime = newTime;
+            document.getElementById('seek-bar').value = currentTime;
+            updateTimeDisplay();
+            
+            if(activeProvider === 'youtube' && ytPlayer) ytPlayer.seekTo(currentTime, true);
+            if(activeProvider === 'soundcloud') scWidget.seekTo(currentTime * 1000);
+        }, { passive: false });
+
+        function handleInputDown(col) {
+            if (!isRecording || !isPlaying) return;
+            if (heldCols[col] !== undefined) return;
+            heldCols[col] = currentTime;
+        }
+
+        function handleInputUp(col) {
+            if (!isRecording || !isPlaying) {
+                if(heldCols[col] !== undefined) delete heldCols[col];
+                return;
+            }
+            const startTime = heldCols[col];
+            if (startTime !== undefined) {
+                let duration = currentTime - startTime;
+                if (duration < 0.1) duration = 0; 
+                let finalTime = startTime;
+                
+                const snapDivisor = parseInt(document.getElementById('snap-divisor').value);
+                if (snapDivisor > 0 && mapData.bpm > 0) {
+                    const beatInt = (60 / mapData.bpm) / snapDivisor;
+                    finalTime = Math.round((startTime - mapData.offset) / beatInt) * beatInt + mapData.offset;
+                }
+                addNote(finalTime, col, duration);
+                delete heldCols[col];
+            }
+        }
+
+        window.addEventListener('keydown', e => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.code === 'Space') { e.preventDefault(); togglePlay(); return; }
+            if (e.repeat) return;
+            const col = KEY_MAPPING[mapData.keyMode][e.code];
+            if (col !== undefined) handleInputDown(col);
+        });
+
+        window.addEventListener('keyup', e => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            const col = KEY_MAPPING[mapData.keyMode][e.code];
+            if (col !== undefined) handleInputUp(col);
+        });
+
+        window.addEventListener('mousedown', e => {
+            if (e.target.closest('.panel')) return;
+            if (isRecording && isPlaying && mapData.keyMode === 2) {
+                if (e.button === 0) handleInputDown(0);
+                if (e.button === 2) handleInputDown(1);
+            }
+        });
+        window.addEventListener('mouseup', e => {
+            if (isRecording && isPlaying && mapData.keyMode === 2) {
+                if (e.button === 0) handleInputUp(0);
+                if (e.button === 2) handleInputUp(1);
+            }
+        });
+        window.addEventListener('contextmenu', e => {
+            if(e.target === canvas) e.preventDefault();
+        });
+
+        function toggleRecord() {
+            isRecording = !isRecording;
+            const btn = document.getElementById('record-btn');
+            if (isRecording) {
+                btn.classList.add('recording');
+                btn.innerText = "⏹ 녹화 중지";
+            } else {
+                btn.classList.remove('recording');
+                btn.innerText = "⏺ 녹화 모드 켜기";
+                heldCols = {}; 
+            }
+        }
+
+        function addNote(time, col, duration) {
+            const existing = mapData.notes.find(n => n.col === col && Math.abs(n.time - time) < 0.02);
+            if (existing) {
+                existing.duration = duration;
+            } else {
+                mapData.notes.push({ 
+                    time: parseFloat(time.toFixed(3)), 
+                    col, 
+                    duration: parseFloat(duration.toFixed(3)) 
+                });
+            }
+        }
+
+        function changeKeyMode() {
+            if(mapData.notes.length > 0 && !confirm("키 모드를 변경하면 기존 노트가 초기화될 수 있습니다. 계속하시겠습니까?")) {
+                document.getElementById('key-mode').value = mapData.keyMode;
+                return;
+            }
+            mapData.keyMode = parseInt(document.getElementById('key-mode').value);
+            mapData.notes = [];
+            updateKeyGuide();
+        }
+
+        function updateKeyGuide() {
+            const el = document.getElementById('key-guide-display');
+            const mode = mapData.keyMode;
+            if (mode === 2) el.innerHTML = `<div class="key-item">Left<b>D</b></div><div class="key-item">Right<b>K</b></div>`;
+            else if (mode === 4) el.innerHTML = `<div class="key-item">1<b>D</b></div><div class="key-item">2<b>F</b></div><div class="key-item">3<b>J</b></div><div class="key-item">4<b>K</b></div>`;
+            else if (mode === 6) el.innerHTML = `<div class="key-item">1<b>S</b></div><div class="key-item">2<b>D</b></div><div class="key-item">3<b>F</b></div><div class="key-item">4<b>J</b></div><div class="key-item">5<b>K</b></div><div class="key-item">6<b>L</b></div>`;
+        }
+        
+        function setTool(tool) {
+            currentTool = tool;
+            ['tap','long','delete'].forEach(t => document.getElementById(`tool-${t}`).classList.remove('active'));
+            document.getElementById(`tool-${tool}`).classList.add('active');
+        }
+
+        function updateTimeDisplay() {
+            const m = Math.floor(currentTime / 60);
+            const s = Math.floor(currentTime % 60);
+            const ms = Math.floor((currentTime % 1) * 1000);
+            document.getElementById('time-display').innerText = 
+                `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+        }
+        
+        function updateGrid() {
+            mapData.bpm = parseFloat(document.getElementById('bpm').value) || 120;
+            mapData.offset = parseFloat(document.getElementById('offset').value) || 0;
+        }
+
+        // --- 내보내기/불러오기 기능 ---
+
+        function generateExportData() {
+            mapData.notes.sort((a,b) => a.time - b.time);
+            
+            const compressedNotes = mapData.notes.map(n => {
+                const t = parseFloat(n.time.toFixed(3));
+                const c = n.col;
+                const d = parseFloat(n.duration.toFixed(3));
+                return d > 0 ? [t, c, d] : [t, c];
+            });
+
+            // 현재 슬라이더의 속도 값을 가져옴
+            const currentSpeed = parseFloat(document.getElementById('note-speed').value);
+
+            return {
+                v: 3,
+                url: document.getElementById('music-url').value,
+                keyMode: mapData.keyMode,
+                bpm: mapData.bpm,
+                offset: mapData.offset,
+                speed: currentSpeed, // [추가됨] 여기에 속도 저장
+                d: compressedNotes
+            };
+        }
+
+        function exportToClipboard() {
+            const data = generateExportData();
+            const str = JSON.stringify(data);
+            const textArea = document.getElementById('export-area');
+            textArea.value = str;
+            textArea.select();
+            document.execCommand('copy');
+            alert("코드가 클립보드에 복사되었습니다!");
+        }
+
+        // [수정] 파일 이름 지정 기능 추가
+        function downloadMapFile() {
+            // 사용자로부터 파일 이름 입력 받기
+            let filename = prompt("저장할 파일 이름을 입력하세요:", "custom_rhythm");
+            
+            // 취소 버튼을 눌렀을 경우 함수 종료
+            if (filename === null) return;
+            
+            // 이름이 비어있으면 기본값 사용
+            if (filename.trim() === "") filename = "custom_rhythm";
+            
+            // 확장자 .crn 확인 및 추가
+            if (!filename.endsWith(".crn")) filename += ".crn";
+
+            const data = generateExportData();
+            const jsonStr = JSON.stringify(data);
+            const blob = new Blob([jsonStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename; // 입력받은 파일 이름 사용
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function loadMapFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const loadedData = JSON.parse(e.target.result);
+                    if (!loadedData.d) throw new Error("유효하지 않은 파일입니다.");
+
+                    document.getElementById('music-url').value = loadedData.url || "";
+                    document.getElementById('key-mode').value = loadedData.keyMode || 2;
+                    document.getElementById('bpm').value = loadedData.bpm || 120;
+                    document.getElementById('offset').value = loadedData.offset || 0;
+
+                    // [추가됨] 속도 불러오기 로직
+                    // 파일에 속도 정보가 없으면 기본값 1.0 사용
+                    const savedSpeed = loadedData.speed || 1.0; 
+                    document.getElementById('note-speed').value = savedSpeed;
+                    
+                    // [중요] 불러온 값으로 실제 변수 업데이트 및 UI 텍스트 갱신
+                    // (이전에 만든 updateSpeed 함수를 직접 호출하거나 아래처럼 로직 수행)
+                    document.getElementById('speed-display').innerText = savedSpeed.toFixed(1);
+                    pixelsPerSecond = BASE_PIXELS_PER_SECOND * savedSpeed;
+
+
+                    mapData.keyMode = loadedData.keyMode || 2;
+                    mapData.bpm = loadedData.bpm || 120;
+                    mapData.offset = loadedData.offset || 0;
+                    
+                    mapData.notes = loadedData.d.map(arr => ({
+                        time: arr[0],
+                        col: arr[1],
+                        duration: arr[2] || 0
+                    }));
+
+                    updateKeyGuide();
+                    alert("파일 불러오기 성공!");
+                    
+                    if (loadedData.url) loadMedia();
+
+                } catch (err) {
+                    alert("파일 불러오기 실패: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+            input.value = ""; 
+        }
+    </script>
+</body>
+</html>
